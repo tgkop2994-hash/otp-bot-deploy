@@ -577,6 +577,21 @@ def handle_ai_message(chat_id, text):
     tg_send(chat_id, reply)
 
 
+def handle_join_request(join):
+    """Auto-approve anyone requesting to join the OTP group."""
+    chat = join.get("chat", {})
+    user = join.get("from", {})
+    chat_id = chat.get("id")
+    user_id = user.get("id")
+    if chat_id != config.CHAT_ID or not user_id:
+        return
+    res = tg("approveChatJoinRequest", chat_id=chat_id, user_id=user_id)
+    ok = bool(res and res.get("ok"))
+    print(f"[{'OK' if ok else 'FAIL'}] join approved: "
+          f"{user.get('first_name', '')} (@{user.get('username', '-')}, "
+          f"{user_id})", flush=True)
+
+
 def main():
     print("Country-menu OTP sender bot running...")
     print("The control panel opens in your private DM via /start.")
@@ -585,13 +600,16 @@ def main():
     while True:
         try:
             upd = tg("getUpdates", offset=offset, timeout=30,
-                     allowed_updates=["message", "callback_query"])
+                     allowed_updates=["message", "callback_query",
+                                      "chat_join_request"])
             if not upd or not upd.get("ok"):
                 time.sleep(1)
                 continue
             for u in upd["result"]:
                 offset = u["update_id"] + 1
-                if "callback_query" in u:
+                if "chat_join_request" in u:
+                    handle_join_request(u["chat_join_request"])
+                elif "callback_query" in u:
                     cb = u["callback_query"]
                     cb_chat = (cb.get("message") or {}).get("chat", {}).get("id")
                     if is_owner(cb_chat):
