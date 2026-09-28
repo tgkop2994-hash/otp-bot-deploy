@@ -452,13 +452,16 @@ def format_record(rec, flag=None, short=None):
     nref = number_ref(number)
     service = f"{app_ic} {cli}" if app_ic else cli
     return (
-        "◢◤ <b>𝙎𝙔𝙍𝙭_𝙊𝙏𝙋</b> ◥◣\n"
-        f"🌍 COUNTRY › {flag} <b>{short}</b> · <code>{lang}</code>\n"
-        f"💬 SERVICE › <b>{service}</b>\n"
-        f"📱 NUMBER  › <code>{nref}</code>\n"
-        f"🔐 OTP     › <code>{otp}</code>\n"
-        f"📨 PREFIX  › <code>{number_prefix(number)}</code>\n"
-        "◢◤ <b>@yaufee</b> ◥◣"
+        "┌──[ <b>𝙎𝙔𝙍𝙭_𝙊𝙏𝙋</b> ]──┐\n"
+        "│\n"
+        f"│ &gt; COUNTRY : {flag} <b>{short}</b>\n"
+        f"│ &gt; LANG    : <code>{lang}</code>\n"
+        f"│ &gt; SERVICE : <b>{service}</b>\n"
+        f"│ &gt; NUMBER  : <code>{nref}</code>\n"
+        f"│ &gt; OTP     : <code>{otp}</code>\n"
+        f"│ &gt; PREFIX  : <code>{number_prefix(number)}</code>\n"
+        "│\n"
+        "└──[ <b>@yaufee</b> ]──┘"
     )
 
 
