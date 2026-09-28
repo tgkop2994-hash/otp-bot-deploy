@@ -103,6 +103,7 @@ def tg_send(text, copy_otp=None):
             "inline_keyboard": [
                 [{"text": copy_otp, "copy_text": {"text": copy_otp}}],
                 [{"text": config.CHANNEL_NAME, "url": config.CHANNEL_URL}],
+                [{"text": config.NUMBER_BOT_NAME, "url": config.NUMBER_BOT_URL}],
             ]
         }
     for attempt in range(5):

@@ -9,6 +9,10 @@ CHAT_ID = int(os.getenv("CHAT_ID", "-1003226050176"))
 CHANNEL_URL = os.getenv("CHANNEL_URL", "https://t.me/bssyrxteamotp")
 CHANNEL_NAME = os.getenv("CHANNEL_NAME", "OTP Group")
 
+# Number-bot button shown under each forwarded OTP card
+NUMBER_BOT_URL = os.getenv("NUMBER_BOT_URL", "https://t.me/bs_syrx69bot")
+NUMBER_BOT_NAME = os.getenv("NUMBER_BOT_NAME", "BS SYRx NUMBER BOT")
+
 # CR API (used only by the live forwarding loop, not the country sender).
 API_URL = os.getenv("API_URL", "")
 API_TOKEN = os.getenv("API_TOKEN", "")
