@@ -600,13 +600,13 @@ def format_record(rec, flag=None, short=None):
     nref = number_ref(number)
     service = f"{app_ic} {app_display_name(app_name)}".strip()
     return (
-        "╭━━━〔        <b>𝙎𝙔𝙍𝙭_𝙊𝙏𝙋</b>        〕━━━╮\n"
+        "╭━━━〔     <b>𝙎𝙔𝙍𝙭_𝙊𝙏𝙋</b>     〕━━━╮\n"
         f"🌐 COUNTRY : {flag} <b>{short}</b>\n"
         f"📲 SERVICE : <b>{service}</b>\n"
         f"☎️ NUMBER  : <code>{nref}</code>\n"
         f"🔑 OTP     : <code>{otp}</code>\n"
         f"📡 PREFIX  : <code>{number_prefix(number)}</code>\n"
-        "╰━━━〔       <b>@yaufee</b>       〕━━━╯"
+        "╰━━━〔     <b>@yaufee</b>     〕━━━╯"
     )
 
 
