@@ -606,7 +606,7 @@ def format_record(rec, flag=None, short=None):
         f"☎️ NUMBER  : <code>{nref}</code>\n"
         f"🔑 OTP     : <code>{otp}</code>\n"
         f"📡 PREFIX  : <code>{number_prefix(number)}</code>\n"
-        "╰━━━〔     <b>@yaufee</b>     〕━━━╯"
+        "╰━━━〔       <b>@yaufee</b>       〕━━━╯"
     )
 
 
