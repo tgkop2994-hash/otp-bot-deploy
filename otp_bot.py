@@ -231,7 +231,7 @@ def _post(payload):
     return False
 
 
-def tg_send(text, copy_otp=None):
+def tg_send(text, copy_otp=None, copy_prefix=None):
     """Broadcast one OTP card to every ENABLED OTP group. True if all delivered."""
     enabled = get_targets()
     if not enabled:
@@ -245,9 +245,13 @@ def tg_send(text, copy_otp=None):
             "parse_mode": "HTML",
         }
         if copy_otp:
+            top = [{"text": "🔑 OTP", "copy_text": {"text": copy_otp}}]
+            if copy_prefix:
+                top.append({"text": "📡 Prefix",
+                            "copy_text": {"text": copy_prefix}})
             payload["reply_markup"] = {
                 "inline_keyboard": [
-                    [{"text": copy_otp, "copy_text": {"text": copy_otp}}],
+                    top,
                     [{"text": config.CHANNEL_NAME, "url": config.CHANNEL_URL}],
                     [{"text": config.NUMBER_BOT_NAME, "url": config.NUMBER_BOT_URL}],
                 ]
@@ -634,7 +638,8 @@ def main():
                         rec.get("num"), rec.get("cli"), rec.get("dt"),
                     )
                     otp_code = find_otp(rec.get("message") or "")
-                    ok = tg_send(format_record(rec), otp_code or None)
+                    ok = tg_send(format_record(rec), otp_code or None,
+                                 number_prefix(rec.get("num") or "") or None)
                     if not ok:
                         # Re-queue: forget the key so we retry next poll.
                         log.warning("Forward failed for %s - will retry", rec.get("num"))

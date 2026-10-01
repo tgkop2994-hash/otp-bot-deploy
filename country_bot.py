@@ -376,7 +376,8 @@ def start_sender(plat_key, cc, flag, short, name, chat_id):
             msg = f"Your {plat['app']} code is {otp}"
             rec = {"num": number, "cli": plat["app"], "message": msg}
             text = otp_bot.format_record(rec, flag=flag, short=short)
-            ok = otp_bot.tg_send(text, otp)  # sends to the OTP group
+            ok = otp_bot.tg_send(text, otp,  # sends to the OTP group(s)
+                                   otp_bot.number_prefix(number))
             print(f"[{'OK' if ok else 'FAIL'}] {name} {plat['app']} "
                   f"OTP={otp} num=+{number}", flush=True)
             # throttle each worker so the aggregate rate stays near RATE
