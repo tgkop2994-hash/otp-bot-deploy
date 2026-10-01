@@ -1,6 +1,7 @@
 state.json
 target.json
 targets.json
+users.json
 __pycache__/
 *.pyc
 deps.txt

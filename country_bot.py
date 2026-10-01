@@ -89,6 +89,7 @@ def platform_menu():
     rows.append([{"text": "🤖 ChatGPT OTP", "callback_data": "chatgpt"}])
     rows.append([{"text": "➕ OTP Group Add", "callback_data": "addgroup"}])
     rows.append([{"text": "📋 OTP Groups", "callback_data": "listgroups"}])
+    rows.append([{"text": "👤 user BS", "callback_data": "users"}])
     rows.append([{"text": "🔍 Search country", "callback_data": "search"}])
     return {"inline_keyboard": rows}
 
@@ -141,6 +142,7 @@ CURRENT = {"app": None, "flag": None, "short": None, "cc": None, "name": None}
 AI_MODE = set()          # chat_ids currently chatting with the AI
 SEARCH_MODE = set()      # chat_ids waiting for a search input
 ADDGROUP_MODE = set()    # chat_ids waiting for a group link/username/id
+ADDUSER_MODE = set()     # chat_ids (owner) waiting for a user to authorize
 PENDING_APP = {}         # chat_id -> platform chosen via search, waiting for country
 MODEL_CHOICE = {}        # chat_id -> preferred ai_bot provider key
 _thread = None
@@ -451,12 +453,16 @@ def handle_command(chat_id, text):
     if text.startswith("/cancel"):
         SEARCH_MODE.discard(chat_id)
         ADDGROUP_MODE.discard(chat_id)
+        ADDUSER_MODE.discard(chat_id)
         PENDING_APP.pop(chat_id, None)
         tg_send(chat_id, "Cancelled. Back to the menu.", platform_menu())
         return True
     if text.startswith("/addgroup"):
         ADDGROUP_MODE.add(chat_id)
         tg_send(chat_id, ADDGROUP_PROMPT, platform_menu())
+        return True
+    if text.startswith("/users"):
+        tg_send(chat_id, users_text(), users_keyboard())
         return True
     if text.startswith("/groups"):
         tg_send(chat_id, groups_text(), groups_keyboard())
@@ -532,6 +538,15 @@ def handle_callback(cb):
         tg_edit(chat_id, msg_id, ADDGROUP_PROMPT, platform_menu())
     elif data == "listgroups":
         tg_edit(chat_id, msg_id, groups_text(), groups_keyboard())
+    elif data == "users":
+        ADDUSER_MODE.add(chat_id)
+        tg_edit(chat_id, msg_id, users_text(), users_keyboard())
+    elif data.startswith("rmuser:"):
+        try:
+            remove_user(int(data.split(":", 1)[1]))
+        except ValueError:
+            pass
+        tg_edit(chat_id, msg_id, users_text(), users_keyboard())
     elif data.startswith("rmgroup:"):
         try:
             otp_bot.remove_target(int(data.split(":", 1)[1]))
@@ -635,6 +650,150 @@ def handle_callback(cb):
 
 def is_owner(chat_id):
     return chat_id in owner_ids()
+
+
+def is_allowed(chat_id):
+    """Owner + authorized extra users get the full panel."""
+    if chat_id in owner_ids():
+        return True
+    return any(u.get("id") == chat_id for u in load_users()["users"])
+
+
+USERS_FILE = "users.json"  # {"users": [{"id":..,"username":".."}], "pending": [".."]}
+
+
+def load_users():
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            users = [u for u in data.get("users", [])
+                     if isinstance(u, dict) and u.get("id")]
+            pending = [p for p in data.get("pending", []) if p]
+            return {"users": users, "pending": pending}
+    except Exception:
+        return {"users": [], "pending": []}
+
+
+def save_users(data):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+def authorize_user(user_id, username=""):
+    data = load_users()
+    for u in data["users"]:
+        if u.get("id") == user_id:
+            if username:
+                u["username"] = username
+            save_users(data)
+            return False
+    data["users"].append({"id": user_id, "username": username or ""})
+    low = (username or "").lower()
+    data["pending"] = [p for p in data["pending"] if p.lower() != low]
+    save_users(data)
+    return True
+
+
+def remove_user(user_id):
+    data = load_users()
+    data["users"] = [u for u in data["users"] if u.get("id") != user_id]
+    save_users(data)
+
+
+def promote_pending(chat_id, from_obj):
+    """If this sender's @username was pre-approved, authorize them now."""
+    uname = (from_obj.get("username") or "").lower()
+    if not uname:
+        return None
+    data = load_users()
+    if uname in [p.lower() for p in data["pending"]]:
+        authorize_user(chat_id, from_obj.get("username", ""))
+        return from_obj.get("username", "")
+    return None
+
+
+def users_text():
+    data = load_users()
+    lines = [f"👤 <b>user BS ({len(data['users'])}):</b>"]
+    for i, u in enumerate(data["users"], 1):
+        nm = f"@{u['username']}" if u.get("username") else "(no username)"
+        lines.append(f"{i}. <b>{nm}</b> — <code>{u['id']}</code>")
+    if data["pending"]:
+        lines.append("\n⏳ Waiting for first /start: " +
+                     ", ".join(f"<code>@{p}</code>" for p in data["pending"]))
+    lines.append("\nSend @username or numeric ID to add (several at once OK). "
+                 "Tap ❌ to remove.")
+    return "\n".join(lines)
+
+
+def users_keyboard():
+    rows = []
+    for u in load_users()["users"]:
+        label = f"❌ @{u['username']}" if u.get("username") else f"❌ {u['id']}"
+        rows.append([{"text": label[:40],
+                      "callback_data": f"rmuser:{u['id']}"}])
+    rows.append([{"text": "⬅️ Back to platforms", "callback_data": "back"}])
+    return {"inline_keyboard": rows}
+
+
+ADDUSER_PROMPT = (
+    "👤 <b>user BS — add user</b>\n"
+    "Send <b>@username(s)</b> or <b>numeric ID(s)</b> — one per line:\n"
+    "<code>@someone\n123456789</code>\n\n"
+    "That person gets the FULL panel (all buttons). "
+    "For @usernames, tell them to send /start to the bot once — "
+    "access activates automatically.\n"
+    "/cancel exits."
+)
+
+
+def handle_user_text(chat_id, text):
+    tokens = [t for t in re.split(r"[\s,]+", (text or "").strip()) if t]
+    if not tokens:
+        tg_send(chat_id, "❌ Send at least one @username or numeric ID.",
+                platform_menu())
+        return
+    added, existed, failed, waiting = [], [], [], []
+    for tok in tokens:
+        if tok.lstrip("-").isdigit():
+            uid = int(tok)
+            if authorize_user(uid, ""):
+                added.append(f"<code>{uid}</code>")
+            else:
+                existed.append(f"<code>{uid}</code>")
+            continue
+        uname = tok[1:] if tok.startswith("@") else tok
+        if not re.fullmatch(r"[A-Za-z0-9_]{5,}", uname or ""):
+            failed.append((tok, "bad username format"))
+            continue
+        got = tg("getChat", chat_id="@" + uname)
+        if got and got.get("ok") and (got.get("result") or {}).get("type") == "private":
+            uid = got["result"].get("id")
+            if authorize_user(uid, uname):
+                added.append(f"@{uname}")
+            else:
+                existed.append(f"@{uname}")
+        else:
+            data = load_users()
+            if uname.lower() in [p.lower() for p in data["pending"]]:
+                existed.append(f"@{uname} (waiting)")
+            else:
+                data["pending"].append(uname)
+                save_users(data)
+                waiting.append(uname)
+    parts = []
+    for t in added:
+        parts.append(f"✅ Added <b>{t}</b> — full access")
+    for t in existed:
+        parts.append(f"ℹ️ Already added: <b>{t}</b>")
+    for u in waiting:
+        parts.append(f"⏳ <b>@{u}</b> queued — tell them to send /start "
+                     "to the bot, access auto-activates")
+    for tok, why in failed:
+        parts.append(f"❌ <code>{tok}</code>: {why}")
+    tg_send(chat_id, "\n".join(parts) or "Nothing to do.", users_keyboard())
+    if not failed:
+        ADDUSER_MODE.discard(chat_id)
 
 
 OWNER_FILE = "owner.json"
@@ -751,7 +910,7 @@ def main():
                 elif "callback_query" in u:
                     cb = u["callback_query"]
                     cb_chat = (cb.get("message") or {}).get("chat", {}).get("id")
-                    if is_owner(cb_chat):
+                    if is_allowed(cb_chat):
                         handle_callback(cb)
                     else:
                         # silent: just clear the loading spinner
@@ -762,7 +921,20 @@ def main():
                     username = msg_user.get("username", "")
                     txt = u["message"]["text"]
                     log_chat(chat_id, username, msg_user.get("first_name", ""))
-                    if not is_owner(chat_id):
+                    allowed = is_allowed(chat_id)
+                    if not allowed:
+                        new_uname = promote_pending(chat_id, msg_user)
+                        if new_uname:
+                            allowed = True
+                            for oid in owner_ids():
+                                tg_send(oid,
+                                        f"✅ User <b>@{new_uname}</b> "
+                                        f"(<code>{chat_id}</code>) activated — "
+                                        "full access granted.")
+                            tg_send(chat_id,
+                                    "✅ <b>Access granted.</b> Full panel below:",
+                                    platform_menu())
+                    if not allowed:
                         # first /start claims ownership; anything else is ignored
                         if not owner_ids() and txt.strip().startswith("/start"):
                             claim_owner(chat_id, username)
@@ -776,6 +948,8 @@ def main():
                         do_stop(chat_id)
                     elif chat_id in ADDGROUP_MODE:
                         handle_group_text(chat_id, txt)
+                    elif chat_id in ADDUSER_MODE:
+                        handle_user_text(chat_id, txt)
                     elif chat_id in SEARCH_MODE:
                         handle_search_text(chat_id, txt)
                     elif chat_id in AI_MODE:
