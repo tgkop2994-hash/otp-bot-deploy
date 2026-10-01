@@ -88,6 +88,7 @@ def platform_menu():
     rows.append([{"text": "💙 IMO OTP", "callback_data": "imo"}])
     rows.append([{"text": "🤖 ChatGPT OTP", "callback_data": "chatgpt"}])
     rows.append([{"text": "➕ OTP Group Add", "callback_data": "addgroup"}])
+    rows.append([{"text": "📋 OTP Groups", "callback_data": "listgroups"}])
     rows.append([{"text": "🔍 Search country", "callback_data": "search"}])
     return {"inline_keyboard": rows}
 
@@ -149,13 +150,32 @@ BOT_ID = int(config.BOT_TOKEN.split(":")[0])
 
 ADDGROUP_PROMPT = (
     "➕ <b>OTP Group Add</b>\n"
-    "Send the new group's <b>link</b>, <b>@username</b>, or <b>numeric ID</b> —\n"
-    "e.g. <code>https://t.me/somegroup</code>, <code>@somegroup</code>, "
-    "or <code>-1001234567890</code>.\n\n"
-    "⚠️ First add @syrx77bot to that group (as admin). "
+    "Send group <b>link(s)</b>, <b>@username(s)</b>, or <b>numeric ID(s)</b> —\n"
+    "one per line (or space-separated) to add several at once:\n"
+    "<code>https://t.me/group1\nhttps://t.me/group2</code>\n\n"
+    "⚠️ First add @syrx77bot to each group (as admin). "
     "I cannot join by myself — a human admin must add me.\n"
-    "/cancel exits."
+    "📋 OTP Groups shows the added list. /cancel exits."
 )
+
+
+def groups_text():
+    targets = otp_bot.get_targets()
+    lines = [f"📋 <b>OTP Groups ({len(targets)}):</b>"]
+    for i, (cid, title) in enumerate(targets, 1):
+        name = title or "(no name)"
+        lines.append(f"{i}. <b>{name}</b> — <code>{cid}</code>")
+    lines.append("\nOTPs go to all of these at once. Tap ❌ to remove one.")
+    return "\n".join(lines)
+
+
+def groups_keyboard():
+    rows = []
+    for cid, title in otp_bot.get_targets():
+        label = f"❌ {title}" if title else f"❌ {cid}"
+        rows.append([{"text": label[:40], "callback_data": f"rmgroup:{cid}"}])
+    rows.append([{"text": "⬅️ Back to platforms", "callback_data": "back"}])
+    return {"inline_keyboard": rows}
 
 
 def parse_group_input(text):
@@ -174,50 +194,56 @@ def parse_group_input(text):
 
 
 def handle_group_text(chat_id, text):
-    ident = parse_group_input(text)
-    if ident is None:
+    tokens = [t for t in re.split(r"[\s,]+", (text or "").strip()) if t]
+    if not tokens:
         tg_send(chat_id,
-                "❌ Couldn't read that. Send a group link like "
-                "<code>https://t.me/somegroup</code>, an <code>@username</code>, "
-                "or a numeric ID like <code>-1001234567890</code>.",
+                "❌ Send at least one group link, @username, or numeric ID.",
                 platform_menu())
         return
-    chat = tg("getChat", chat_id=ident)
-    if not chat or not chat.get("ok"):
-        tg_send(chat_id,
-                "❌ Can't find that group. Check the link/username/ID — and make "
-                "sure the group exists and I'm added to it.\n"
-                "(Private invite links like <code>t.me/+xxxx</code> can't be "
-                "resolved: use the numeric ID instead.)",
-                platform_menu())
-        return
-    info = chat["result"]
-    gid = info.get("id")
-    title = info.get("title", "")
-    ctype = info.get("type", "")
-    if ctype not in ("group", "supergroup"):
-        tg_send(chat_id,
-                f"❌ That's a <b>{ctype}</b>, not a group. Send a group link, "
-                "@username, or ID.",
-                platform_menu())
-        return
-    member = tg("getChatMember", chat_id=gid, user_id=BOT_ID)
-    status = (member.get("result", {}) or {}).get("status", "") if member and member.get("ok") else ""
-    if status not in ("creator", "administrator", "member"):
-        tg_send(chat_id,
-                f"⚠️ Found <b>{title}</b> (<code>{gid}</code>) but I'm not in it.\n"
-                "Add @syrx77bot to that group first (admin is best), then send "
-                "the link/username/ID again.",
-                platform_menu())
-        return
-    otp_bot.set_target_chat_id(gid, title)
-    ADDGROUP_MODE.discard(chat_id)
-    admin_note = "" if status in ("creator", "administrator") else \
-        " (I'm only a member there — make me admin for full reliability)"
-    tg_send(chat_id,
-            f"✅ OTP group set to <b>{title}</b> (<code>{gid}</code>){admin_note}.\n"
-            "OTPs will now be sent there. Press ▶️ Start or use search to begin.",
-            platform_menu())
+    added, existed, failed = [], [], []
+    for tok in tokens:
+        ident = parse_group_input(tok)
+        if ident is None:
+            failed.append((tok, "unreadable — use a link, @username, or ID"))
+            continue
+        chat = tg("getChat", chat_id=ident)
+        if not chat or not chat.get("ok"):
+            failed.append((tok, "group not found (am I added there? "
+                                "private invite links need the numeric ID)"))
+            continue
+        info = chat["result"]
+        gid = info.get("id")
+        title = info.get("title", "")
+        ctype = info.get("type", "")
+        if ctype not in ("group", "supergroup"):
+            failed.append((tok, f"that's a {ctype}, not a group"))
+            continue
+        member = tg("getChatMember", chat_id=gid, user_id=BOT_ID)
+        status = (member.get("result", {}) or {}).get("status", "") \
+            if member and member.get("ok") else ""
+        if status not in ("creator", "administrator", "member"):
+            failed.append((tok, f"found '{title}' but I'm not in it — "
+                                "add @syrx77bot there first"))
+            continue
+        if otp_bot.add_target(gid, title):
+            note = "" if status in ("creator", "administrator") else \
+                " (member only — make me admin there)"
+            added.append(f"{title}{note}")
+        else:
+            existed.append(title or str(gid))
+    parts = []
+    for t in added:
+        parts.append(f"✅ Added <b>{t}</b>")
+    for t in existed:
+        parts.append(f"ℹ️ Already added: <b>{t}</b>")
+    for tok, why in failed:
+        parts.append(f"❌ <code>{tok}</code>: {why}")
+    n = len(otp_bot.get_targets())
+    parts.append(f"\n📋 Now sending to <b>{n}</b> OTP group(s). "
+                "Press ▶️ Start or use search to begin.")
+    tg_send(chat_id, "\n".join(parts), platform_menu())
+    if not failed:
+        ADDGROUP_MODE.discard(chat_id)
 
 
 def stop_sender():
@@ -364,7 +390,8 @@ def start_sender(plat_key, cc, flag, short, name, chat_id):
             f"🚀 Started {plat['label']} test OTPs for <b>{flag} {short}</b> "
             f"<b>{name}</b> (+{cc}), {otp_len} digits · 1 OTP every "
             f"{interval:g}s (1/sec), unlimited until 🛑 Stop.\n"
-            f"OTPs are being sent to the OTP group. Use ⏯️ /stop to halt.")
+            f"OTPs are being sent to {len(otp_bot.get_targets())} OTP group(s). "
+            f"Use ⏯️ /stop to halt.")
 
 
 def tg_send(chat_id, text, markup=None):
@@ -430,6 +457,9 @@ def handle_command(chat_id, text):
     if text.startswith("/addgroup"):
         ADDGROUP_MODE.add(chat_id)
         tg_send(chat_id, ADDGROUP_PROMPT, platform_menu())
+        return True
+    if text.startswith("/groups"):
+        tg_send(chat_id, groups_text(), groups_keyboard())
         return True
     if text.startswith("/search"):
         SEARCH_MODE.add(chat_id)
@@ -500,6 +530,14 @@ def handle_callback(cb):
     elif data == "addgroup":
         ADDGROUP_MODE.add(chat_id)
         tg_edit(chat_id, msg_id, ADDGROUP_PROMPT, platform_menu())
+    elif data == "listgroups":
+        tg_edit(chat_id, msg_id, groups_text(), groups_keyboard())
+    elif data.startswith("rmgroup:"):
+        try:
+            otp_bot.remove_target(int(data.split(":", 1)[1]))
+        except ValueError:
+            pass
+        tg_edit(chat_id, msg_id, groups_text(), groups_keyboard())
     elif data == "insta":
         if CURRENT.get("cc") and CURRENT.get("short"):
             start_sender("instagram", CURRENT["cc"], CURRENT["flag"],

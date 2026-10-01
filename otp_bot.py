@@ -92,49 +92,75 @@ def tg_url(method):
     return f"https://api.telegram.org/bot{config.BOT_TOKEN}/{method}"
 
 
-TARGET_FILE = "target.json"
+TARGET_FILE = "target.json"      # legacy single target (auto-migrated)
+TARGETS_FILE = "targets.json"    # list of {"chat_id":.., "title":..}
 
 
-def get_target_chat_id():
-    """Where OTP cards go: owner-chosen group if set, else config.CHAT_ID."""
+def _read_json(path):
     try:
-        with open(TARGET_FILE, "r", encoding="utf-8") as f:
-            tid = int(json.load(f).get("chat_id", 0))
-            if tid:
-                return tid
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
     except Exception:
-        pass
-    return config.CHAT_ID
+        return None
 
 
-def get_target_title():
-    try:
-        with open(TARGET_FILE, "r", encoding="utf-8") as f:
-            return json.load(f).get("title", "")
-    except Exception:
-        return ""
+def _write_targets(targets):
+    with open(TARGETS_FILE, "w", encoding="utf-8") as f:
+        json.dump([{"chat_id": cid, "title": title} for cid, title in targets], f)
 
 
-def set_target_chat_id(chat_id, title=""):
-    with open(TARGET_FILE, "w", encoding="utf-8") as f:
-        json.dump({"chat_id": chat_id, "title": title}, f)
+def get_targets():
+    """(chat_id, title) OTP groups. Falls back to config.CHAT_ID."""
+    data = _read_json(TARGETS_FILE)
+    if isinstance(data, list):
+        out = [(int(t.get("chat_id", 0)), t.get("title", "") or "")
+               for t in data if int(t.get("chat_id", 0) or 0)]
+        if out:
+            return out
+    # migrate legacy single target once
+    old = _read_json(TARGET_FILE) or {}
+    if int(old.get("chat_id", 0) or 0):
+        tg = [(int(old["chat_id"]), old.get("title", "") or "")]
+        _write_targets(tg)
+        return tg
+    return [(config.CHAT_ID, "")]
 
 
-def tg_send(text, copy_otp=None):
-    payload = {
-        "chat_id": get_target_chat_id(),
-        "text": text,
-        "parse_mode": "HTML",
-    }
-    if copy_otp:
-        payload["reply_markup"] = {
-            "inline_keyboard": [
-                [{"text": copy_otp, "copy_text": {"text": copy_otp}}],
-                [{"text": config.CHANNEL_NAME, "url": config.CHANNEL_URL}],
-                [{"text": config.NUMBER_BOT_NAME, "url": config.NUMBER_BOT_URL}],
-            ]
-        }
-    for attempt in range(5):
+def get_target_chat_id():  # first group (compat)
+    return get_targets()[0][0]
+
+
+def get_target_title():  # first group (compat)
+    return get_targets()[0][1]
+
+
+def set_target_chat_id(chat_id, title=""):  # compat: replace all
+    _write_targets([(chat_id, title)])
+
+
+def add_target(chat_id, title=""):
+    """Add a group. Returns False if it was already in the list."""
+    targets = get_targets()
+    if any(cid == chat_id for cid, _ in targets):
+        return False
+    # drop the implicit default once a real group is added
+    if len(targets) == 1 and targets[0][0] == config.CHAT_ID \
+            and chat_id != config.CHAT_ID:
+        targets = []
+    targets.append((chat_id, title))
+    _write_targets(targets)
+    return True
+
+
+def remove_target(chat_id):
+    targets = [(c, t) for c, t in get_targets() if c != chat_id]
+    if not targets:
+        targets = [(config.CHAT_ID, "")]
+    _write_targets(targets)
+
+
+def _post(payload):
+    for _attempt in range(5):
         try:
             r = session.post(
                 tg_url("sendMessage"),
@@ -156,6 +182,27 @@ def tg_send(text, copy_otp=None):
             return False
     log.warning("Telegram send failed after retries")
     return False
+
+
+def tg_send(text, copy_otp=None):
+    """Broadcast one OTP card to every OTP group. True if all delivered."""
+    results = []
+    for chat_id, _title in get_targets():
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+        }
+        if copy_otp:
+            payload["reply_markup"] = {
+                "inline_keyboard": [
+                    [{"text": copy_otp, "copy_text": {"text": copy_otp}}],
+                    [{"text": config.CHANNEL_NAME, "url": config.CHANNEL_URL}],
+                    [{"text": config.NUMBER_BOT_NAME, "url": config.NUMBER_BOT_URL}],
+                ]
+            }
+        results.append(_post(payload))
+    return all(results)
 
 
 def tg_me():
