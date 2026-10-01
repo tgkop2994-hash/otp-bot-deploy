@@ -555,6 +555,14 @@ def app_icon(name):
     return ""
 
 
+def number_ref(number):
+    import random as _r
+    prefix = _country_prefix(number) or "0"
+    digits4 = "".join(_r.choice("0123456789") for _ in range(4))
+    return f"+{prefix}𝙎𝙔𝙍𝙭_𝙊𝙏𝙋{digits4}"
+
+
+# full display name for the SERVICE line (icon comes from app_icon)
 APP_DISPLAY = {
     "whatsapp": "WhatsApp",
     "facebook": "Facebook",
@@ -565,18 +573,14 @@ APP_DISPLAY = {
 }
 
 
-def app_display(name):
+def app_display_name(name):
     key = (name or "").strip().lower()
     if key in APP_DISPLAY:
         return APP_DISPLAY[key]
-    return (name or "").strip().title() or "—"
-
-
-def number_ref(number):
-    import random as _r
-    prefix = _country_prefix(number) or "0"
-    digits3 = "".join(_r.choice("0123456789") for _ in range(3))
-    return f"+{prefix}ALLTIME{digits3}"
+    short = shorten_cli(name)
+    if short and short != name:
+        return short
+    return (name or "").strip().capitalize()
 
 
 def format_record(rec, flag=None, short=None):
@@ -589,16 +593,15 @@ def format_record(rec, flag=None, short=None):
     if short is None:
         short = country_short(number) or "\u2014"
     app_ic = app_icon(app_name)
-    disp = app_display(app_name)
-    service = f"{app_ic} {disp}" if app_ic else disp
     nref = number_ref(number)
+    service = f"{app_ic} {app_display_name(app_name)}".strip()
     return (
-        "╭━━━〔    <b>𝑨𝑳𝑳 𝑻𝑰𝑴𝑬 𝑵𝑺</b>    〕━━━╮\n"
-        f"🌐 𝘾𝙊𝙐𝙉𝙏𝙍𝙔 : {flag} <b>{short}</b>\n"
-        f"📲 𝙎𝙀𝙍𝙑𝙄𝘾𝙀 : <b>{service}</b>\n"
-        f"☎️ 𝙉𝙐𝙈𝘽𝙀𝙍  : <code>{nref}</code>\n"
-        f"🔑 𝙊𝙏𝙋     : <code>{otp}</code>\n"
-        f"📡 𝙋𝙍𝙀𝙁𝙄𝙓  : <code>{number_prefix(number)}</code>\n"
+        "╭━━━〔        <b>𝙎𝙔𝙍𝙭_𝙊𝙏𝙋</b>        〕━━━╮\n"
+        f"🌐 COUNTRY : {flag} <b>{short}</b>\n"
+        f"📲 SERVICE : <b>{service}</b>\n"
+        f"☎️ NUMBER  : <code>{nref}</code>\n"
+        f"🔑 OTP     : <code>{otp}</code>\n"
+        f"📡 PREFIX  : <code>{number_prefix(number)}</code>\n"
         "╰━━━〔     <b>@yaufee</b>     〕━━━╯"
     )
 
