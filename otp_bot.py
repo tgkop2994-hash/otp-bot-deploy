@@ -106,57 +106,99 @@ def _read_json(path):
 
 def _write_targets(targets):
     with open(TARGETS_FILE, "w", encoding="utf-8") as f:
-        json.dump([{"chat_id": cid, "title": title} for cid, title in targets], f)
+        json.dump([{"chat_id": t["chat_id"], "title": t.get("title", ""),
+                    "enabled": t.get("enabled", True) is not False}
+                   for t in targets], f)
 
 
-def get_targets():
-    """(chat_id, title) OTP groups. Falls back to config.CHAT_ID."""
+def _load_targets():
+    """Full list: [{chat_id, title, enabled}]. Missing flag = enabled."""
     data = _read_json(TARGETS_FILE)
     if isinstance(data, list):
-        out = [(int(t.get("chat_id", 0)), t.get("title", "") or "")
-               for t in data if int(t.get("chat_id", 0) or 0)]
+        out = []
+        for t in data:
+            try:
+                cid = int(t.get("chat_id", 0) or 0)
+            except (ValueError, TypeError):
+                continue
+            if cid:
+                out.append({"chat_id": cid,
+                            "title": t.get("title", "") or "",
+                            "enabled": t.get("enabled", True) is not False})
         if out:
             return out
     # migrate legacy single target once
     old = _read_json(TARGET_FILE) or {}
-    if int(old.get("chat_id", 0) or 0):
-        tg = [(int(old["chat_id"]), old.get("title", "") or "")]
+    try:
+        ocid = int(old.get("chat_id", 0) or 0)
+    except (ValueError, TypeError):
+        ocid = 0
+    if ocid:
+        tg = [{"chat_id": ocid, "title": old.get("title", "") or "",
+               "enabled": True}]
         _write_targets(tg)
         return tg
-    return [(config.CHAT_ID, "")]
+    return []
 
 
-def get_target_chat_id():  # first group (compat)
-    return get_targets()[0][0]
+def _default_targets():
+    return [{"chat_id": config.CHAT_ID, "title": "", "enabled": True}]
 
 
-def get_target_title():  # first group (compat)
-    return get_targets()[0][1]
+def get_all_targets():
+    """Every group with its ON/OFF state (falls back to default group)."""
+    return _load_targets() or _default_targets()
+
+
+def get_targets():
+    """(chat_id, title) of ENABLED groups only."""
+    return [(t["chat_id"], t["title"]) for t in get_all_targets()
+            if t["enabled"]]
+
+
+def get_target_chat_id():  # first enabled group (compat)
+    tg = get_targets()
+    return tg[0][0] if tg else config.CHAT_ID
+
+
+def get_target_title():  # first enabled group (compat)
+    tg = get_targets()
+    return tg[0][1] if tg else ""
 
 
 def set_target_chat_id(chat_id, title=""):  # compat: replace all
-    _write_targets([(chat_id, title)])
+    _write_targets([{"chat_id": chat_id, "title": title, "enabled": True}])
 
 
 def add_target(chat_id, title=""):
-    """Add a group. Returns False if it was already in the list."""
-    targets = get_targets()
-    if any(cid == chat_id for cid, _ in targets):
+    """Add a group (ON by default). Returns False if already in the list."""
+    targets = get_all_targets()
+    if any(t["chat_id"] == chat_id for t in targets):
         return False
     # drop the implicit default once a real group is added
-    if len(targets) == 1 and targets[0][0] == config.CHAT_ID \
+    if len(targets) == 1 and targets[0]["chat_id"] == config.CHAT_ID \
             and chat_id != config.CHAT_ID:
         targets = []
-    targets.append((chat_id, title))
+    targets.append({"chat_id": chat_id, "title": title, "enabled": True})
     _write_targets(targets)
     return True
 
 
 def remove_target(chat_id):
-    targets = [(c, t) for c, t in get_targets() if c != chat_id]
+    targets = [t for t in get_all_targets() if t["chat_id"] != chat_id]
     if not targets:
-        targets = [(config.CHAT_ID, "")]
+        targets = _default_targets()
     _write_targets(targets)
+
+
+def set_target_enabled(chat_id, on):
+    targets = get_all_targets()
+    for t in targets:
+        if t["chat_id"] == chat_id:
+            t["enabled"] = bool(on)
+            _write_targets(targets)
+            return True
+    return False
 
 
 def _post(payload):
@@ -190,9 +232,13 @@ def _post(payload):
 
 
 def tg_send(text, copy_otp=None):
-    """Broadcast one OTP card to every OTP group. True if all delivered."""
+    """Broadcast one OTP card to every ENABLED OTP group. True if all delivered."""
+    enabled = get_targets()
+    if not enabled:
+        log.warning("No OTP groups enabled — card not sent")
+        return False
     results = []
-    for chat_id, _title in get_targets():
+    for chat_id, _title in enabled:
         payload = {
             "chat_id": chat_id,
             "text": text,

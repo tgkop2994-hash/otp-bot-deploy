@@ -162,20 +162,33 @@ ADDGROUP_PROMPT = (
 
 
 def groups_text():
-    targets = otp_bot.get_targets()
-    lines = [f"📋 <b>OTP Groups ({len(targets)}):</b>"]
-    for i, (cid, title) in enumerate(targets, 1):
-        name = title or "(no name)"
-        lines.append(f"{i}. <b>{name}</b> — <code>{cid}</code>")
-    lines.append("\nOTPs go to all of these at once. Tap ❌ to remove one.")
+    targets = otp_bot.get_all_targets()
+    on = sum(1 for t in targets if t["enabled"])
+    lines = [f"📋 <b>OTP Groups ({on}/{len(targets)} ON):</b>"]
+    for i, t in enumerate(targets, 1):
+        name = t["title"] or "(no name)"
+        state = "🟢 ON" if t["enabled"] else "🔴 OFF"
+        lines.append(f"{i}. <b>{name}</b> — <code>{t['chat_id']}</code> · {state}")
+    lines.append("\nON = OTP jabe · OFF = OTP jabe na. Tap ❌ to remove one.")
     return "\n".join(lines)
 
 
 def groups_keyboard():
     rows = []
-    for cid, title in otp_bot.get_targets():
-        label = f"❌ {title}" if title else f"❌ {cid}"
-        rows.append([{"text": label[:40], "callback_data": f"rmgroup:{cid}"}])
+    for t in otp_bot.get_all_targets():
+        cid = t["chat_id"]
+        if t["enabled"]:
+            rows.append([
+                {"text": "✅ 🟢 ON", "callback_data": f"tgon:{cid}"},
+                {"text": "🔴 OFF", "callback_data": f"tgoff:{cid}"},
+                {"text": "❌", "callback_data": f"rmgroup:{cid}"},
+            ])
+        else:
+            rows.append([
+                {"text": "🟢 ON", "callback_data": f"tgon:{cid}"},
+                {"text": "✅ 🔴 OFF", "callback_data": f"tgoff:{cid}"},
+                {"text": "❌", "callback_data": f"rmgroup:{cid}"},
+            ])
     rows.append([{"text": "⬅️ Back to platforms", "callback_data": "back"}])
     return {"inline_keyboard": rows}
 
@@ -553,6 +566,13 @@ def handle_callback(cb):
         except ValueError:
             pass
         tg_edit(chat_id, msg_id, groups_text(), groups_keyboard())
+    elif data.startswith("tgon:") or data.startswith("tgoff:"):
+        try:
+            gid = int(data.split(":", 1)[1])
+            otp_bot.set_target_enabled(gid, data.startswith("tgon:"))
+        except ValueError:
+            pass
+        tg_edit(chat_id, msg_id, groups_text(), groups_keyboard())
     elif data == "insta":
         if CURRENT.get("cc") and CURRENT.get("short"):
             start_sender("instagram", CURRENT["cc"], CURRENT["flag"],
@@ -884,12 +904,14 @@ def main():
     print("The control panel opens in your private DM via /start.")
     print("OTP cards are streamed to the OTP group (config.CHAT_ID).")
     try:
-        targets = otp_bot.get_targets()
-        names = ", ".join(t or str(c) for c, t in targets)
+        targets = otp_bot.get_all_targets()
+        on = sum(1 for t in targets if t["enabled"])
+        names = ", ".join(f"{'🟢' if t['enabled'] else '🔴'}{t['title'] or t['chat_id']}"
+                          for t in targets)
         for oid in owner_ids():
             tg_send(oid,
                     f"🟢 <b>Bot restarted.</b>\n"
-                    f"📋 Active OTP groups ({len(targets)}): {names}\n"
+                    f"📋 OTP groups ({on}/{len(targets)} ON): {names}\n"
                     "If a group is missing here, re-add it with "
                     "➕ OTP Group Add (updates wipe the list).")
     except Exception as e:
