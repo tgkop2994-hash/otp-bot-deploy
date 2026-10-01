@@ -724,6 +724,17 @@ def main():
     print("Country-menu OTP sender bot running...")
     print("The control panel opens in your private DM via /start.")
     print("OTP cards are streamed to the OTP group (config.CHAT_ID).")
+    try:
+        targets = otp_bot.get_targets()
+        names = ", ".join(t or str(c) for c, t in targets)
+        for oid in owner_ids():
+            tg_send(oid,
+                    f"🟢 <b>Bot restarted.</b>\n"
+                    f"📋 Active OTP groups ({len(targets)}): {names}\n"
+                    "If a group is missing here, re-add it with "
+                    "➕ OTP Group Add (updates wipe the list).")
+    except Exception as e:
+        print("boot notice failed:", e)
     offset = 0
     while True:
         try:

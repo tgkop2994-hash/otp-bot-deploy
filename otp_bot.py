@@ -167,7 +167,12 @@ def _post(payload):
                 json=payload,
                 timeout=30,
             )
-            data = r.json()
+            try:
+                data = r.json()
+            except ValueError:
+                log.warning("Telegram non-JSON reply, retrying")
+                time.sleep(2)
+                continue
             if data.get("ok"):
                 return True
             if data.get("error_code") == 429:
