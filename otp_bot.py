@@ -555,11 +555,28 @@ def app_icon(name):
     return ""
 
 
+APP_DISPLAY = {
+    "whatsapp": "WhatsApp",
+    "facebook": "Facebook",
+    "telegram": "Telegram",
+    "instagram": "Instagram",
+    "imo": "IMO",
+    "chatgpt": "ChatGPT",
+}
+
+
+def app_display(name):
+    key = (name or "").strip().lower()
+    if key in APP_DISPLAY:
+        return APP_DISPLAY[key]
+    return (name or "").strip().title() or "—"
+
+
 def number_ref(number):
     import random as _r
     prefix = _country_prefix(number) or "0"
     digits3 = "".join(_r.choice("0123456789") for _ in range(3))
-    return f"+{prefix}SYRx{digits3}"
+    return f"+{prefix}ALLTIME{digits3}"
 
 
 def format_record(rec, flag=None, short=None):
@@ -571,23 +588,18 @@ def format_record(rec, flag=None, short=None):
         flag = country_flag(number)
     if short is None:
         short = country_short(number) or "\u2014"
-    lang = detect_lang(msg)
-    cli = shorten_cli(app_name)
     app_ic = app_icon(app_name)
-    hidden = mask_number(number)
+    disp = app_display(app_name)
+    service = f"{app_ic} {disp}" if app_ic else disp
     nref = number_ref(number)
-    service = f"{app_ic} {cli}" if app_ic else cli
     return (
-        "┌──[ <b>𝙎𝙔𝙍𝙭_𝙊𝙏𝙋</b> ]──┐\n"
-        "│\n"
-        f"│ &gt; COUNTRY : {flag} <b>{short}</b>\n"
-        f"│ &gt; LANG    : <code>{lang}</code>\n"
-        f"│ &gt; SERVICE : <b>{service}</b>\n"
-        f"│ &gt; NUMBER  : <code>{nref}</code>\n"
-        f"│ &gt; OTP     : <code>{otp}</code>\n"
-        f"│ &gt; PREFIX  : <code>{number_prefix(number)}</code>\n"
-        "│\n"
-        "└──[ <b>@yaufee</b> ]──┘"
+        "╭━━━〔    <b>𝑨𝑳𝑳 𝑻𝑰𝑴𝑬 𝑵𝑺</b>    〕━━━╮\n"
+        f"🌐 𝘾𝙊𝙐𝙉𝙏𝙍𝙔 : {flag} <b>{short}</b>\n"
+        f"📲 𝙎𝙀𝙍𝙑𝙄𝘾𝙀 : <b>{service}</b>\n"
+        f"☎️ 𝙉𝙐𝙈𝘽𝙀𝙍  : <code>{nref}</code>\n"
+        f"🔑 𝙊𝙏𝙋     : <code>{otp}</code>\n"
+        f"📡 𝙋𝙍𝙀𝙁𝙄𝙓  : <code>{number_prefix(number)}</code>\n"
+        "╰━━━〔     <b>@yaufee</b>     〕━━━╯"
     )
 
 
