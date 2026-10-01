@@ -92,9 +92,37 @@ def tg_url(method):
     return f"https://api.telegram.org/bot{config.BOT_TOKEN}/{method}"
 
 
+TARGET_FILE = "target.json"
+
+
+def get_target_chat_id():
+    """Where OTP cards go: owner-chosen group if set, else config.CHAT_ID."""
+    try:
+        with open(TARGET_FILE, "r", encoding="utf-8") as f:
+            tid = int(json.load(f).get("chat_id", 0))
+            if tid:
+                return tid
+    except Exception:
+        pass
+    return config.CHAT_ID
+
+
+def get_target_title():
+    try:
+        with open(TARGET_FILE, "r", encoding="utf-8") as f:
+            return json.load(f).get("title", "")
+    except Exception:
+        return ""
+
+
+def set_target_chat_id(chat_id, title=""):
+    with open(TARGET_FILE, "w", encoding="utf-8") as f:
+        json.dump({"chat_id": chat_id, "title": title}, f)
+
+
 def tg_send(text, copy_otp=None):
     payload = {
-        "chat_id": config.CHAT_ID,
+        "chat_id": get_target_chat_id(),
         "text": text,
         "parse_mode": "HTML",
     }

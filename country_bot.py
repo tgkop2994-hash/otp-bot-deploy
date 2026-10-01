@@ -2,6 +2,7 @@ import concurrent.futures
 import json
 import os
 import random
+import re
 import threading
 import time
 
@@ -86,6 +87,7 @@ def platform_menu():
     rows.append([{"text": "📸 Instagram OTP", "callback_data": "insta"}])
     rows.append([{"text": "💙 IMO OTP", "callback_data": "imo"}])
     rows.append([{"text": "🤖 ChatGPT OTP", "callback_data": "chatgpt"}])
+    rows.append([{"text": "➕ OTP Group Add", "callback_data": "addgroup"}])
     rows.append([{"text": "🔍 Search country", "callback_data": "search"}])
     return {"inline_keyboard": rows}
 
@@ -137,10 +139,85 @@ def country_menu(plat_key, page=0):
 CURRENT = {"app": None, "flag": None, "short": None, "cc": None, "name": None}
 AI_MODE = set()          # chat_ids currently chatting with the AI
 SEARCH_MODE = set()      # chat_ids waiting for a search input
+ADDGROUP_MODE = set()    # chat_ids waiting for a group link/username/id
 PENDING_APP = {}         # chat_id -> platform chosen via search, waiting for country
 MODEL_CHOICE = {}        # chat_id -> preferred ai_bot provider key
 _thread = None
 _send_stop = threading.Event()
+
+BOT_ID = int(config.BOT_TOKEN.split(":")[0])
+
+ADDGROUP_PROMPT = (
+    "➕ <b>OTP Group Add</b>\n"
+    "Send the new group's <b>link</b>, <b>@username</b>, or <b>numeric ID</b> —\n"
+    "e.g. <code>https://t.me/somegroup</code>, <code>@somegroup</code>, "
+    "or <code>-1001234567890</code>.\n\n"
+    "⚠️ First add @syrx77bot to that group (as admin). "
+    "I cannot join by myself — a human admin must add me.\n"
+    "/cancel exits."
+)
+
+
+def parse_group_input(text):
+    """Accept a t.me link, @username, or numeric id. Returns str or int."""
+    t = (text or "").strip()
+    if t.lstrip("-").isdigit():
+        return int(t)
+    m = re.search(r"t\.me/(?:joinchat/|\+)?([A-Za-z0-9_]+)", t)
+    if m:
+        return "@" + m.group(1)
+    if t.startswith("@") and len(t) > 1:
+        return t
+    if re.fullmatch(r"[A-Za-z0-9_]{5,}", t):
+        return "@" + t
+    return None
+
+
+def handle_group_text(chat_id, text):
+    ident = parse_group_input(text)
+    if ident is None:
+        tg_send(chat_id,
+                "❌ Couldn't read that. Send a group link like "
+                "<code>https://t.me/somegroup</code>, an <code>@username</code>, "
+                "or a numeric ID like <code>-1001234567890</code>.",
+                platform_menu())
+        return
+    chat = tg("getChat", chat_id=ident)
+    if not chat or not chat.get("ok"):
+        tg_send(chat_id,
+                "❌ Can't find that group. Check the link/username/ID — and make "
+                "sure the group exists and I'm added to it.\n"
+                "(Private invite links like <code>t.me/+xxxx</code> can't be "
+                "resolved: use the numeric ID instead.)",
+                platform_menu())
+        return
+    info = chat["result"]
+    gid = info.get("id")
+    title = info.get("title", "")
+    ctype = info.get("type", "")
+    if ctype not in ("group", "supergroup"):
+        tg_send(chat_id,
+                f"❌ That's a <b>{ctype}</b>, not a group. Send a group link, "
+                "@username, or ID.",
+                platform_menu())
+        return
+    member = tg("getChatMember", chat_id=gid, user_id=BOT_ID)
+    status = (member.get("result", {}) or {}).get("status", "") if member and member.get("ok") else ""
+    if status not in ("creator", "administrator", "member"):
+        tg_send(chat_id,
+                f"⚠️ Found <b>{title}</b> (<code>{gid}</code>) but I'm not in it.\n"
+                "Add @syrx77bot to that group first (admin is best), then send "
+                "the link/username/ID again.",
+                platform_menu())
+        return
+    otp_bot.set_target_chat_id(gid, title)
+    ADDGROUP_MODE.discard(chat_id)
+    admin_note = "" if status in ("creator", "administrator") else \
+        " (I'm only a member there — make me admin for full reliability)"
+    tg_send(chat_id,
+            f"✅ OTP group set to <b>{title}</b> (<code>{gid}</code>){admin_note}.\n"
+            "OTPs will now be sent there. Press ▶️ Start or use search to begin.",
+            platform_menu())
 
 
 def stop_sender():
@@ -344,6 +421,16 @@ def handle_command(chat_id, text):
         PENDING_APP.pop(chat_id, None)
         tg_send(chat_id, "🔍 Search cancelled. Back to the menu.", platform_menu())
         return True
+    if text.startswith("/cancel"):
+        SEARCH_MODE.discard(chat_id)
+        ADDGROUP_MODE.discard(chat_id)
+        PENDING_APP.pop(chat_id, None)
+        tg_send(chat_id, "Cancelled. Back to the menu.", platform_menu())
+        return True
+    if text.startswith("/addgroup"):
+        ADDGROUP_MODE.add(chat_id)
+        tg_send(chat_id, ADDGROUP_PROMPT, platform_menu())
+        return True
     if text.startswith("/search"):
         SEARCH_MODE.add(chat_id)
         tg_send(chat_id, search_prompt(), platform_menu())
@@ -410,6 +497,9 @@ def handle_callback(cb):
     elif data == "search":
         SEARCH_MODE.add(chat_id)
         tg_edit(chat_id, msg_id, search_prompt(), platform_menu())
+    elif data == "addgroup":
+        ADDGROUP_MODE.add(chat_id)
+        tg_edit(chat_id, msg_id, ADDGROUP_PROMPT, platform_menu())
     elif data == "insta":
         if CURRENT.get("cc") and CURRENT.get("short"):
             start_sender("instagram", CURRENT["cc"], CURRENT["flag"],
@@ -635,6 +725,8 @@ def main():
                         do_start(chat_id)
                     elif txt in ("🛑 Stop", "🛑 Stop OTP", "Stop"):
                         do_stop(chat_id)
+                    elif chat_id in ADDGROUP_MODE:
+                        handle_group_text(chat_id, txt)
                     elif chat_id in SEARCH_MODE:
                         handle_search_text(chat_id, txt)
                     elif chat_id in AI_MODE:
