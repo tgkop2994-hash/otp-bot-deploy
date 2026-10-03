@@ -473,9 +473,14 @@ def handle_command(chat_id, text):
         return True
     if text.startswith("/addgroup"):
         ADDGROUP_MODE.add(chat_id)
+        SEARCH_MODE.discard(chat_id)
+        ADDUSER_MODE.discard(chat_id)
         tg_send(chat_id, ADDGROUP_PROMPT, platform_menu())
         return True
     if text.startswith("/users"):
+        ADDUSER_MODE.add(chat_id)
+        SEARCH_MODE.discard(chat_id)
+        ADDGROUP_MODE.discard(chat_id)
         tg_send(chat_id, users_text(), users_keyboard())
         return True
     if text.startswith("/groups"):
@@ -483,6 +488,8 @@ def handle_command(chat_id, text):
         return True
     if text.startswith("/search"):
         SEARCH_MODE.add(chat_id)
+        ADDGROUP_MODE.discard(chat_id)
+        ADDUSER_MODE.discard(chat_id)
         tg_send(chat_id, search_prompt(), platform_menu())
         return True
     if text.startswith("/ai") or text.startswith("/python"):
@@ -546,14 +553,20 @@ def handle_callback(cb):
                 control_menu())
     elif data == "search":
         SEARCH_MODE.add(chat_id)
+        ADDGROUP_MODE.discard(chat_id)
+        ADDUSER_MODE.discard(chat_id)
         tg_edit(chat_id, msg_id, search_prompt(), platform_menu())
     elif data == "addgroup":
         ADDGROUP_MODE.add(chat_id)
+        SEARCH_MODE.discard(chat_id)
+        ADDUSER_MODE.discard(chat_id)
         tg_edit(chat_id, msg_id, ADDGROUP_PROMPT, platform_menu())
     elif data == "listgroups":
         tg_edit(chat_id, msg_id, groups_text(), groups_keyboard())
     elif data == "users":
         ADDUSER_MODE.add(chat_id)
+        SEARCH_MODE.discard(chat_id)
+        ADDGROUP_MODE.discard(chat_id)
         tg_edit(chat_id, msg_id, users_text(), users_keyboard())
     elif data.startswith("rmuser:"):
         try:
