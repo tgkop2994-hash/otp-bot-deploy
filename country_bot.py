@@ -314,12 +314,24 @@ def handle_search_text(chat_id, text):
     q = q.lower()
     if not q:
         if app:
-            PENDING_APP[chat_id] = app
-            tg_send(chat_id,
-                    f"✅ Platform: <b>{PLAT_BY_KEY[app]['label']}</b>.\n"
-                    "Now type the country code, e.g. <code>IN</code> — or "
-                    "just send the full <code>IN WA</code> again.",
-                    platform_menu())
+            if CURRENT.get("cc") and CURRENT.get("short"):
+                # app only (tg/fb/ig/imo/wa) -> run it on the last country
+                start_sender(app, CURRENT["cc"], CURRENT["flag"],
+                             CURRENT["short"], CURRENT["name"], chat_id)
+                SEARCH_MODE.discard(chat_id)
+                PENDING_APP.pop(chat_id, None)
+                tg_send(chat_id,
+                        f"🚀 Search → started <b>{CURRENT['flag']} "
+                        f"{CURRENT['name']} ({CURRENT['short']})</b> on "
+                        f"{PLAT_BY_KEY[app]['label']} · OTPs → OTP group(s).",
+                        platform_menu())
+            else:
+                PENDING_APP[chat_id] = app
+                tg_send(chat_id,
+                        f"✅ Platform: <b>{PLAT_BY_KEY[app]['label']}</b>.\n"
+                        "Now type the country code, e.g. <code>IN</code> — or "
+                        "just send the full <code>IN WA</code> again.",
+                        platform_menu())
         return
     # resolve the country
     hits = [c for c in COUNTRIES if c[2].lower() == q]
